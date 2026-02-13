@@ -1,10 +1,10 @@
 import os
 import discord
 from discord.ext import tasks
-from pronotepy.ent import ENTConnection
+from pronotepy import Client
 from dotenv import load_dotenv
 
-# --- Charger les variables d'environnement depuis .env ---
+# --- Charger les variables d'environnement ---
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -12,28 +12,24 @@ USERNAME = os.getenv("PRONOTE_USERNAME")
 PASSWORD = os.getenv("PRONOTE_PASSWORD")
 PRONOTE_URL = os.getenv("PRONOTE_URL")
 
-# --- Variables d'environnement Railway ---
-TOKEN = os.getenv("DISCORD_TOKEN")
-USERNAME = os.getenv("PRONOTE_USERNAME")
-PASSWORD = os.getenv("PRONOTE_PASSWORD")
-PRONOTE_URL = os.getenv("PRONOTE_URL")
+# --- Connexion PRONOTE via Client ---
+pronote_client = Client(
+    username=USERNAME,
+    password=PASSWORD,
+    server_url=PRONOTE_URL,
+    school=PRONOTE_URL  # parfois requis pour ENT
+)
 
-# --- Discord ---
+# --- Discord bot setup ---
 intents = discord.Intents.default()
 intents.message_content = True
-client = discord.Client(intents=intents)
-
-# --- Connexion PRONOTE via ENT ---
-ent = ENTConnection(PRONOTE_URL, username=USERNAME, password=PASSWORD)
-
-# --- Stockage des notes précédentes pour détecter les nouveautés ---
-previous_notes = {}
+bot = discord.Bot(intents=intents)
 
 # --- Fonction pour récupérer les notes ---
 async def get_notes():
     new_notes = {}
     try:
-        notes = ent.notes()  # Utilisation de ent au lieu de pronote
+        notes = pronote_client.notes()
         for note in notes:
             matiere = note.subject
             titre = note.title
@@ -45,65 +41,20 @@ async def get_notes():
         print(f"Erreur lors de la récupération des notes : {e}")
     return new_notes
 
-# --- Calcul des moyennes ---
-def calculate_averages(notes):
-    averages = {}
-    total_sum = 0
-    total_coef = 0
-
-    for matiere, liste in notes.items():
-        somme = sum([float(n["note"]) * n["coef"] for n in liste])
-        coef = sum([n["coef"] for n in liste])
-        if coef > 0:
-            averages[matiere] = round(somme / coef, 2)
-            total_sum += somme
-            total_coef += coef
-
-    total_average = round(total_sum / total_coef, 2) if total_coef > 0 else 0
-    return averages, total_average
-
-# --- Tâche automatique pour vérifier les nouvelles notes ---
-@tasks.loop(minutes=10)
+# --- Tâche Discord pour notifier les nouvelles notes ---
+@tasks.loop(minutes=5)
 async def check_new_notes():
-    notes, new_notes = get_notes()
-    if new_notes:
-        # Remplace "general" par le nom exact de ton channel Discord
-        channel = discord.utils.get(client.get_all_channels(), name="general")
-        if channel:
-            for (matiere, titre), note in new_notes.items():
-                await channel.send(
-                    f"Nouvelle note en **{matiere}** : {note['note']} / {note['total']} ({titre})"
-                )
+    channel = bot.get_channel(int(os.getenv("DISCORD_CHANNEL_ID")))
+    if channel:
+        new_notes = await get_notes()
+        for (matiere, titre), note in new_notes.items():
+            await channel.send(f"Nouvelle note en **{matiere}** : {note['note']} / {note['total']} ({titre})")
 
-# --- Événements Discord ---
-@client.event
+# --- Lancer la tâche au démarrage ---
+@bot.event
 async def on_ready():
-    print(f"Bot connecté en tant que {client.user}")
+    print(f"Bot connecté en tant que {bot.user}")
     check_new_notes.start()
 
-@client.event
-async def on_message(message):
-    if message.author == client.user:
-        return
-
-    # Commande pour afficher toutes les notes
-    if message.content.startswith("/notes"):
-        notes, _ = get_notes()
-        response = "📋 **Notes** :\n"
-        for matiere, liste in notes.items():
-            response += f"**{matiere}** : " + ", ".join(
-                [f"{n['note']}/{n['total']} ({n['title']})" for n in liste]
-            ) + "\n"
-        await message.channel.send(response)
- # Commande pour afficher les moyennes
-    if message.content.startswith("/moyenne"): 
-        notes, _ = get_notes()
-        averages, total_avg = calculate_averages(notes)
-        response = "📊 **Moyennes** :\n"
-        for matiere, avg in averages.items():
-            response += f"**{matiere}** : {avg}\n"
-        response += f"**Moyenne totale** : {total_avg}"
-        await message.channel.send(response)
-
-# --- Lancement du bot Discord ---
-client.run(TOKEN)
+# --- Lancer le bot ---
+bot.run(TOKEN)
