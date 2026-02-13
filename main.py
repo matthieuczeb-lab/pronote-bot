@@ -1,12 +1,16 @@
 import os
 import discord
 from discord.ext import tasks
-from pronotepy import Pronote
 from pronotepy.ent import ENTConnection
 from dotenv import load_dotenv
 
 # --- Charger les variables d'environnement depuis .env ---
 load_dotenv()
+
+TOKEN = os.getenv("DISCORD_TOKEN")
+USERNAME = os.getenv("PRONOTE_USERNAME")
+PASSWORD = os.getenv("PRONOTE_PASSWORD")
+PRONOTE_URL = os.getenv("PRONOTE_URL")
 
 # --- Variables d'environnement Railway ---
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -21,24 +25,25 @@ client = discord.Client(intents=intents)
 
 # --- Connexion PRONOTE via ENT ---
 ent = ENTConnection(PRONOTE_URL, username=USERNAME, password=PASSWORD)
-pronote = Pronote(ent)
 
 # --- Stockage des notes précédentes pour détecter les nouveautés ---
 previous_notes = {}
 
 # --- Fonction pour récupérer les notes ---
-def get_notes():
-    global previous_notes
-    notes = pronote.notes()  # dictionnaire par matière
+async def get_notes():
     new_notes = {}
-
-    for matiere, liste in notes.items():
-        for note in liste:
-            key = (matiere, note["title"])
-            if key not in previous_notes:
-                new_notes[key] = note
-                previous_notes[key] = note
-    return notes, new_notes
+    try:
+        notes = ent.notes()  # Utilisation de ent au lieu de pronote
+        for note in notes:
+            matiere = note.subject
+            titre = note.title
+            new_notes[(matiere, titre)] = {
+                "note": note.value,
+                "total": note.total
+            }
+    except Exception as e:
+        print(f"Erreur lors de la récupération des notes : {e}")
+    return new_notes
 
 # --- Calcul des moyennes ---
 def calculate_averages(notes):
