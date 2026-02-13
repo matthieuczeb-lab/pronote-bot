@@ -10,14 +10,13 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 USERNAME = os.getenv("PRONOTE_USERNAME")
 PASSWORD = os.getenv("PRONOTE_PASSWORD")
-PRONOTE_URL = os.getenv("PRONOTE_URL")
+DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 
-# --- Connexion PRONOTE via Client ---
+# --- Connexion PRONOTE via Client (ENT) ---
 pronote_client = Client(
     username=USERNAME,
     password=PASSWORD,
-    server_url=PRONOTE_URL,
-    school=PRONOTE_URL  # parfois requis pour ENT
+    ent=True  # Connexion via ENT
 )
 
 # --- Discord bot setup ---
@@ -44,7 +43,7 @@ async def get_notes():
 # --- Tâche Discord pour notifier les nouvelles notes ---
 @tasks.loop(minutes=5)
 async def check_new_notes():
-    channel = bot.get_channel(int(os.getenv("DISCORD_CHANNEL_ID")))
+    channel = bot.get_channel(int(DISCORD_CHANNEL_ID))
     if channel:
         new_notes = await get_notes()
         for (matiere, titre), note in new_notes.items():
